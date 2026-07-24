@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: companylookup-prod-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-company_intel}
+      POSTGRES_USER: ${POSTGRES_USER:-company_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-companyintel_prod}
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: companylookup-prod-redis
+    restart: always
+    command: redis-server --save 60 1 --loglevel warning --requirepass "${REDIS_PASSWORD:-}"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: companylookup-prod-searxng
+    restart: always
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      - SEARXNG_BASE_URL=http://searxng:8080/
+      - UWSGI_WORKERS=4
+      - UWSGI_THREADS=2
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: companylookup-prod-backend
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-company_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-company_intel}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - SEARXNG_BASE_URL=http://searxng:8080
+      - ENVIRONMENT=production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: companylookup-prod-worker
+    restart: always
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=4
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-company_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-company_intel}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - SEARXNG_BASE_URL=http://searxng:8080
+      - ENVIRONMENT=production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: companylookup-prod-frontend
+    restart: always
+    environment:
+      - NEXT_PUBLIC_API_URL=https://${DOMAIN_NAME}/api
+    depends_on:
+      - backend
+
+volumes:
+  pgdata_prod:

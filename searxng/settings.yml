@@ -1,0 +1,47 @@
+use_default_settings: true
+
+server:
+  secret_key: "company-intel-searxng-change-in-prod"
+  limiter: false
+  image_proxy: false
+
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json
+
+outgoing:
+  request_timeout: 10
+  max_request_timeout: 15
+  pool_connections: 50
+  pool_maxsize: 20
+
+engines:
+  # Disable problematic engines
+  - name: wikidata
+    disabled: true
+  - name: ahmia
+    disabled: true
+  - name: torch
+    disabled: true
+
+  # Ensure reliable engines are enabled with higher timeouts
+  - name: duckduckgo
+    disabled: false
+    timeout: 8
+  - name: brave
+    disabled: false
+    timeout: 8
+  - name: qwant
+    disabled: false
+    timeout: 8
+  - name: mojeek
+    disabled: false
+    timeout: 8
+  - name: bing
+    disabled: false
+    timeout: 8
+  - name: google
+    disabled: false
+    timeout: 8
